@@ -1,0 +1,15 @@
+{
+  "env": "default",
+  "dataDir": "data",
+  "llm": {
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKey": "",
+    "model": "gpt-4o-mini"
+  },
+  "dispatch": {
+    "defaultRole": "chief-of-staff"
+  },
+  "briefing": {
+    "topDecisions": 5
+  }
+}

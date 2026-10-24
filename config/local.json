@@ -1,0 +1,9 @@
+{
+  "env": "local",
+  "dataDir": "data",
+  "llm": {
+    "baseUrl": "http://localhost:11434/v1",
+    "model": "qwen2.5"
+  },
+  "_comment": "本地环境：默认指向本机 OpenAI 兼容端点（如 Ollama）。apiKey 可留空走离线草稿模式，或在 .env 中配置。"
+}
