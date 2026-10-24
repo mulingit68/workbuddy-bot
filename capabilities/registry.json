@@ -1,0 +1,188 @@
+{
+  "version": 1,
+  "description": "WorkBuddy 现成能力注册表：CEO 调度只查本表，不硬编码。新增能力 = 在本表追加一条记录。",
+  "types": {
+    "skill": "WorkBuddy 技能：宿主内通过 Skill 工具加载执行",
+    "expert": "WorkBuddy 专家：宿主内通过专家会话执行；本地专家通过 Agent 调度",
+    "connector": "连接器：外部数据/服务，需已绑定启用",
+    "custom": "定制开发：仅当以上三类均不满足时使用，代码放 src/handlers/"
+  },
+  "capabilities": [
+    {
+      "id": "docx",
+      "type": "skill",
+      "name": "Word 文档生成与美化",
+      "provider": "workbuddy-docx",
+      "keywords": ["word", "docx", "文档", "报告", "合同", "公文", "论文", "排版"],
+      "invoke": "Skill: workbuddy-docx"
+    },
+    {
+      "id": "pptx",
+      "type": "skill",
+      "name": "PPT 生成与编辑",
+      "provider": "workbuddy-pptx",
+      "keywords": ["ppt", "pptx", "幻灯片", "演示", "路演"],
+      "invoke": "Skill: workbuddy-pptx"
+    },
+    {
+      "id": "sheet-new",
+      "type": "skill",
+      "name": "从零生成 Excel 工作簿",
+      "provider": "workbuddy-sheet-generation",
+      "keywords": ["新建表格", "生成excel", "做一份表", "汇总成表", "excel", "xlsx"],
+      "invoke": "Skill: workbuddy-sheet-generation"
+    },
+    {
+      "id": "sheet-edit",
+      "type": "skill",
+      "name": "既有表格分析/清洗/透视",
+      "provider": "workbuddy-sheetagent",
+      "keywords": ["分析表格", "透视", "清洗", "筛选", "排序", "公式", "图表"],
+      "invoke": "Skill: workbuddy-sheetagent"
+    },
+    {
+      "id": "office-local-edit",
+      "type": "skill",
+      "name": "本地 Office 文件实时编辑",
+      "provider": "workbuddy-local-office-edit",
+      "keywords": ["打开文件", "本地编辑", "wps", "实时修改"],
+      "invoke": "Skill: workbuddy-local-office-edit"
+    },
+    {
+      "id": "pdf",
+      "type": "skill",
+      "name": "PDF 读取与处理",
+      "provider": "pdf",
+      "keywords": ["pdf"],
+      "invoke": "Skill: pdf"
+    },
+    {
+      "id": "frontend-design",
+      "type": "skill",
+      "name": "界面/网页设计",
+      "provider": "frontend-design",
+      "keywords": ["界面", "网页", "原型", "ui", "落地页", "官网"],
+      "invoke": "Skill: frontend-design"
+    },
+    {
+      "id": "deep-research",
+      "type": "skill",
+      "name": "深度研究",
+      "provider": "deep-research",
+      "keywords": ["调研", "深度研究", "研究报告", "竞品分析", "行业分析"],
+      "invoke": "Skill: deep-research"
+    },
+    {
+      "id": "finance",
+      "type": "skill",
+      "name": "金融投研总入口",
+      "provider": "workbuddy-finance-skill",
+      "keywords": ["股票", "基金", "期货", "股指", "量化", "行情", "估值", "财报", "期权"],
+      "invoke": "Skill: workbuddy-finance-skill"
+    },
+    {
+      "id": "xiaohongshu",
+      "type": "skill",
+      "name": "小红书运营",
+      "provider": "xiaohongshu",
+      "keywords": ["小红书", "笔记", "种草"],
+      "invoke": "Skill: xiaohongshu"
+    },
+    {
+      "id": "library",
+      "type": "skill",
+      "name": "资料库/知识库/工作台",
+      "provider": "library",
+      "keywords": ["资料库", "知识库", "工作台", "看板", "收集表", "归档"],
+      "invoke": "Skill: library"
+    },
+    {
+      "id": "cloud-service",
+      "type": "skill",
+      "name": "云后端（数据库/登录/存储）",
+      "provider": "cloud-service",
+      "keywords": ["后端", "数据库", "登录", "注册", "存储", "小程序", "云服务"],
+      "invoke": "Skill: cloud-service"
+    },
+    {
+      "id": "publish-site",
+      "type": "skill",
+      "name": "发布为应用/在线链接",
+      "provider": "发布为应用",
+      "keywords": ["发布", "上线", "部署", "分享链接", "预览链接"],
+      "invoke": "Skill: 发布为应用"
+    },
+    {
+      "id": "automation",
+      "type": "skill",
+      "name": "定时/循环自动化",
+      "provider": "automation_update（内置工具）",
+      "keywords": ["每天", "每周", "定时", "定期", "自动执行", "提醒我"],
+      "invoke": "内置工具: automation_update"
+    },
+    {
+      "id": "expert-finance",
+      "type": "expert",
+      "name": "金融专家 小菲侠",
+      "provider": "xiaofeixia-finance（本地专家）",
+      "keywords": ["期货策略", "螺纹钢", "豆粕", "原油", "量化交易", "套利"],
+      "invoke": "Agent: xiaofeixia-finance"
+    },
+    {
+      "id": "expert-files",
+      "type": "expert",
+      "name": "文件处理专家 小文",
+      "provider": "xiaowen-files（本地专家）",
+      "keywords": ["ocr", "录入", "合同审查", "格式转换", "图片文字"],
+      "invoke": "Agent: xiaowen-files"
+    },
+    {
+      "id": "expert-pc",
+      "type": "expert",
+      "name": "电脑管理专家 钢铁侠",
+      "provider": "ironman-pc（本地专家）",
+      "keywords": ["系统优化", "卡顿", "磁盘清理", "开机加速", "软件安装"],
+      "invoke": "Agent: ironman-pc"
+    },
+    {
+      "id": "expert-discovery",
+      "type": "expert",
+      "name": "专家市场动态发现",
+      "provider": "search_plugins + suggest_plugin_install（内置工具）",
+      "keywords": ["找专家", "有没有专家", "谁能做"],
+      "invoke": "内置工具: search_plugins(type=expert)"
+    },
+    {
+      "id": "conn-pandadata",
+      "type": "connector",
+      "name": "PandaData 金融数据",
+      "provider": "pandadata（连接器）",
+      "keywords": ["行情数据", "k线", "历史数据", "金融数据"],
+      "invoke": "连接器: pandadata（当前未启用，需先在连接器面板启用）"
+    },
+    {
+      "id": "conn-tencent-docs",
+      "type": "connector",
+      "name": "腾讯文档",
+      "provider": "tencent-docs（连接器）",
+      "keywords": ["腾讯文档", "在线表格", "在线文档", "协作编辑"],
+      "invoke": "连接器: tencent-docs（当前未启用，需先启用）"
+    },
+    {
+      "id": "conn-agent-mail",
+      "type": "connector",
+      "name": "智能体邮箱",
+      "provider": "agent-mail（连接器，已连接）",
+      "keywords": ["邮件", "发信", "收件", "邮箱"],
+      "invoke": "连接器: mcp__agent-mail__SendMessage 等"
+    },
+    {
+      "id": "conn-zxkol",
+      "type": "connector",
+      "name": "智选达人（小红书数据）",
+      "provider": "zxkol（连接器）",
+      "keywords": ["达人", "kol", "小红书数据", "爆款笔记", "博主"],
+      "invoke": "连接器: zxkol"
+    }
+  ]
+}

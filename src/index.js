@@ -2,19 +2,19 @@
 'use strict';
 
 /**
- * WorkBuddy Bot 命令行入口
+ * WorkBuddy Bot 命令行入口（CEO 调度架构）
  *
  * 用法：
- *   node src/index.js list                        列出全部角色
- *   node src/index.js route "<任务>"              只路由不执行，查看任务归属
- *   node src/index.js dispatch "<任务>" [--role <id>] [--session <id>]
- *   node src/index.js briefing                    生成每日简报
+ *   node src/index.js list                        列出可复用能力注册表
+ *   node src/index.js plan "<任务>"               只看调度方案（不记录）
+ *   node src/index.js dispatch "<任务>" [--session <id>]   调度并记录
+ *   node src/index.js briefing                    每日简报
  *   node src/index.js session list|new|show [id]  会话管理
  *   node src/index.js context get|set <k> <v>     共享上下文读写
  */
 
 const { loadConfig } = require('./config');
-const { loadRoles } = require('./roles');
+const { loadCapabilities, sortByType, TYPE_LABEL } = require('./capabilities');
 const { ContextStore } = require('./context-store');
 const { SessionManager } = require('./session');
 const { Dispatcher } = require('./dispatcher');
@@ -44,29 +44,36 @@ async function main() {
 
   switch (command) {
     case 'list': {
-      console.log(`WorkBuddy 高管团队（环境：${config.env}）\n`);
-      for (const r of loadRoles(config.rootDir)) {
-        console.log(`  ${r.id.padEnd(16)} ${r.name}（${r.title}） 汇报给: ${r.reportsTo || '-'}`);
+      const caps = sortByType(loadCapabilities(config.rootDir));
+      console.log(`WorkBuddy 可复用能力注册表（环境：${config.env}，共 ${caps.length} 项）\n`);
+      let lastType = '';
+      for (const c of caps) {
+        if (c.type !== lastType) {
+          console.log(`【${TYPE_LABEL[c.type]}】`);
+          lastType = c.type;
+        }
+        console.log(`  ${c.id.padEnd(20)} ${c.name}  ←  ${c.provider}`);
       }
+      console.log('\n新增能力 = 在 capabilities/registry.json 追加一条记录，详见 guides/capability-mapping.md');
       break;
     }
 
-    case 'route': {
+    case 'plan': {
       const task = args.slice(1).join(' ');
-      if (!task) throw new Error('用法: route "<任务>"');
-      const role = dispatcher.route(task, opts.role);
-      console.log(`任务归属 → ${role.name}（${role.id}，汇报给 ${role.reportsTo || '老板'}）`);
+      if (!task) throw new Error('用法: plan "<任务>"');
+      const plan = dispatcher.plan(task);
+      console.log(dispatcher.renderPlan(task, plan));
       break;
     }
 
     case 'dispatch': {
       const task = args.slice(1).join(' ');
-      if (!task) throw new Error('用法: dispatch "<任务>" [--role <id>] [--session <id>]');
-      const { role, draft, sessionId } = await dispatcher.dispatch(task, {
-        roleId: opts.role,
-        sessionId: opts.session,
-      });
-      console.log(`已分发给：${role.name}（${role.id}）  会话：${sessionId}\n`);
+      if (!task) throw new Error('用法: dispatch "<任务>" [--session <id>]');
+      const { plan, draft, sessionId } = await dispatcher.dispatch(task, { sessionId: opts.session });
+      const target = plan.customNeeded
+        ? '定制开发（待评估）'
+        : plan.matches.map(m => `${m.name}`).join('、');
+      console.log(`CEO 分派 → ${target}  会话：${sessionId}\n`);
       console.log(draft);
       break;
     }
@@ -100,20 +107,19 @@ async function main() {
         context.set(args[2], args.slice(3).join(' '));
         console.log(`已写入共享上下文：${args[2]}`);
       } else {
-        const value = context.get(args[2]);
-        console.log(JSON.stringify(value, null, 2));
+        console.log(JSON.stringify(context.get(args[2]), null, 2));
       }
       break;
     }
 
     default:
       console.log([
-        'WorkBuddy Bot — 多角色协作高管团队',
+        'WorkBuddy Bot — CEO 调度 + 现成能力复用',
         '',
         '命令：',
-        '  list                              列出全部角色',
-        '  route "<任务>"                    只路由不执行',
-        '  dispatch "<任务>" [--role <id>]   分发任务并产出草稿',
+        '  list                              列出可复用能力注册表',
+        '  plan "<任务>"                     只看调度方案（不记录）',
+        '  dispatch "<任务>" [--session id]  调度并产出方案草稿',
         '  briefing                          每日简报',
         '  session list|new|show [id]        会话管理',
         '  context get|set <键> <值>         共享上下文读写',

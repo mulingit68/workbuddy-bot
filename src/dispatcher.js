@@ -1,117 +1,137 @@
 'use strict';
 
 /**
- * 任务分发模块（幕僚长中枢）
+ * CEO 调度模块
  *
- * 路由优先级：
- *   1. 显式指定：任务文本以 "@角色id" 开头，或调用时传入 roleId
- *   2. 关键词匹配：按角色 frontmatter 中的 keywords 计分，取最高分
- *   3. 兜底：交给幕僚长（chief-of-staff）
+ * CEO 不执行业务，只做：接收需求 → 拆解 → 查能力注册表分派 → 汇总。
  *
- * 分发流程：组装（全局规则 + 角色定义 + 共享上下文 + 任务）→ 调用 LLM →
- * 产出草稿 → 写入共享上下文与会话 → 返回。
+ * 分派流程：
+ *   1. 用注册表关键词匹配任务，得到命中能力（按 技能→专家→连接器 排序）
+ *   2. 有命中：生成五段式调度方案（拆解/分派/顺序/汇总/待决策）
+ *   3. 无命中：标记「待定制开发」，写明原因与最小可行方案
+ *   4. 配置 LLM 时，由模型基于注册表做更细的拆解与润色；无 LLM 时用确定性模板
  */
 
-const { loadRoles, loadRules } = require('./roles');
+const fs = require('fs');
+const path = require('path');
+const { loadCapabilities, matchCapabilities, sortByType, TYPE_LABEL } = require('./capabilities');
 const provider = require('./provider');
+
+function loadCeoPrompt(rootDir) {
+  const file = path.join(rootDir, 'agents', 'ceo.md');
+  const content = fs.readFileSync(file, 'utf8');
+  const body = content.match(/^---[\s\S]*?---\r?\n?([\s\S]*)$/);
+  return body ? body[1].trim() : content;
+}
 
 class Dispatcher {
   constructor(config, contextStore, sessionManager) {
     this.config = config;
     this.context = contextStore;
     this.sessions = sessionManager;
-    this.roles = loadRoles(config.rootDir);
-    this.rules = loadRules(config.rootDir);
+    this.capabilities = loadCapabilities(config.rootDir);
+    this.ceoPrompt = loadCeoPrompt(config.rootDir);
   }
 
-  /** 路由：返回命中的角色对象 */
-  route(task, roleId) {
-    // 1. 显式指定
-    const explicit = roleId || (task.match(/^@([\w-]+)\s*/) || [])[1];
-    if (explicit) {
-      const role = this.roles.find(r => r.id === explicit);
-      if (!role) throw new Error(`角色不存在: ${explicit}（可用 list 命令查看全部角色）`);
-      return role;
-    }
-    // 2. 关键词计分
-    let best = null;
-    let bestScore = 0;
-    for (const role of this.roles) {
-      const score = role.keywords.filter(k => task.includes(k)).length;
-      if (score > bestScore) {
-        best = role;
-        bestScore = score;
+  /** 只出调度方案，不执行：返回 { matches, customNeeded } */
+  plan(task) {
+    const matches = sortByType(matchCapabilities(task, this.capabilities));
+    return { matches, customNeeded: matches.length === 0 };
+  }
+
+  /** 离线/确定性调度方案模板（五段式） */
+  renderPlan(task, plan) {
+    const lines = ['## 任务拆解', `- ${task}`, '', '## 分派方案', '', '| 子任务 | 能力类型 | 能力名称 | 调用方式 | 命中依据 |', '|---|---|---|---|---|'];
+    if (plan.customNeeded) {
+      lines.push(`| ${task} | 定制开发 | 待评估 | src/handlers/（需老板批准） | 注册表无命中 |`);
+    } else {
+      for (const m of plan.matches) {
+        lines.push(`| ${task} | ${TYPE_LABEL[m.type]} | ${m.name} | ${m.invoke} | 关键词: ${m.hits.join('、')} |`);
       }
     }
-    // 3. 兜底幕僚长
-    return best || this.roles.find(r => r.id === this.config.dispatch.defaultRole);
+    lines.push(
+      '',
+      '## 执行顺序',
+      plan.customNeeded ? '- 先由老板确认是否定制开发。' : '- 各能力产出独立，可并行；汇总由 CEO 完成。',
+      '',
+      '## 汇总方式',
+      '- 各能力产出写入共享上下文，CEO 合并为最终交付物草稿。',
+      '',
+      '## 待老板决策',
+      plan.customNeeded ? '- 是否批准定制开发？（现成能力均不覆盖）' : '- 是否按上述分派方案执行？',
+      '',
+      '【草稿，待老板批准】'
+    );
+    return lines.join('\n');
   }
 
-  /** 分发任务并返回 { role, draft, sessionId } */
+  /** 调度任务：生成方案草稿并落盘，返回 { plan, draft, sessionId } */
   async dispatch(task, options = {}) {
-    const role = this.route(task, options.roleId);
-    const cleanTask = task.replace(/^@[\w-]+\s*/, '');
+    const plan = this.plan(task);
 
-    // 会话：沿用传入的 sessionId，否则新建
     let sessionId = options.sessionId;
     if (!sessionId) {
-      sessionId = this.sessions.create(cleanTask.slice(0, 30)).id;
+      sessionId = this.sessions.create(task.slice(0, 30)).id;
     }
-    this.sessions.append(sessionId, 'user', cleanTask);
+    this.sessions.append(sessionId, 'user', task);
 
-    // 组装消息：全局规则 + 角色定义 + 共享上下文 + 会话历史 + 当前任务
-    const sharedContext = JSON.stringify(this.context.get(), null, 2);
-    const history = (this.sessions.get(sessionId).messages || [])
-      .slice(-10)
-      .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+    let draft;
+    if (this.config.llm.apiKey) {
+      // 有 LLM：让模型基于注册表与 CEO 定义输出调度方案
+      const registryDigest = this.capabilities
+        .map(c => `- [${TYPE_LABEL[c.type]}] ${c.name}（${c.provider}）关键词: ${c.keywords.join('、')}；调用: ${c.invoke}`)
+        .join('\n');
+      const messages = [
+        {
+          role: 'system',
+          content: [
+            this.ceoPrompt,
+            '',
+            '# 可复用能力注册表（只允许从这里分派）',
+            registryDigest,
+            '',
+            '# 共享上下文',
+            JSON.stringify(this.context.get(), null, 2),
+          ].join('\n'),
+        },
+        { role: 'user', content: task },
+      ];
+      draft = await provider.chat(messages, this.config);
+    } else {
+      draft = this.renderPlan(task, plan);
+    }
 
-    const messages = [
-      {
-        role: 'system',
-        content: [
-          `你是 WorkBuddy 高管团队的「${role.name}」（${role.title}）。`,
-          '',
-          '# 全局规则', this.rules,
-          '',
-          '# 角色定义', role.prompt,
-          '',
-          '# 共享上下文', sharedContext,
-        ].join('\n'),
-      },
-      ...history.slice(0, -1),
-      { role: 'user', content: cleanTask },
-    ];
-
-    const draft = await provider.chat(messages, this.config);
-
-    // 记录：会话 + 共享上下文日志
     this.sessions.append(sessionId, 'assistant', draft);
-    this.context.log({ type: 'dispatch', roleId: role.id, task: cleanTask, draft, sessionId });
-
-    return { role, draft, sessionId };
+    this.context.log({
+      type: 'dispatch',
+      task,
+      assigned: plan.matches.map(m => ({ id: m.id, type: m.type, name: m.name })),
+      customNeeded: plan.customNeeded,
+      draft,
+      sessionId,
+    });
+    return { plan, draft, sessionId };
   }
 
-  /** 每日简报：汇总共享上下文中的最近记录 */
+  /** 每日简报：汇总共享上下文中的调度记录 */
   briefing() {
     const recent = this.context.recentMessages(50).filter(m => m.type === 'dispatch');
-    const byRole = {};
-    for (const m of recent) {
-      (byRole[m.roleId] = byRole[m.roleId] || []).push(m);
-    }
-    const lines = ['# WorkBuddy 每日简报', ''];
-    const topN = (this.config.briefing && this.config.briefing.topDecisions) || 5;
-    const roleName = id => (this.roles.find(r => r.id === id) || { name: id }).name;
-
-    lines.push('## 各角色动态');
+    const lines = ['# WorkBuddy 每日简报', '', '## 调度动态'];
     if (recent.length === 0) lines.push('- 暂无记录。');
-    for (const [roleId, items] of Object.entries(byRole)) {
-      lines.push(`- ${roleName(roleId)}：${items.length} 项任务，最近一项「${items[items.length - 1].task.slice(0, 40)}」`);
+    const byCap = {};
+    for (const m of recent) {
+      for (const a of m.assigned || []) {
+        byCap[a.name] = (byCap[a.name] || 0) + 1;
+      }
     }
-    lines.push('', `## 置顶待决策（最多 ${topN} 条）`);
-    const pending = recent.filter(m => m.draft && m.draft.includes('待老板'));
-    if (pending.length === 0) lines.push('- 暂无待决策事项。');
-    for (const m of pending.slice(-topN)) {
-      lines.push(`- [${roleName(m.roleId)}] ${m.task.slice(0, 60)}`);
+    for (const [name, count] of Object.entries(byCap)) {
+      lines.push(`- ${name}：被分派 ${count} 次`);
+    }
+    const customs = recent.filter(m => m.customNeeded);
+    lines.push('', '## 待决策');
+    if (customs.length === 0 && recent.length === 0) lines.push('- 暂无待决策事项。');
+    for (const m of recent.slice(-5)) {
+      lines.push(`- 「${m.task.slice(0, 50)}」${m.customNeeded ? '（待定制开发评估）' : ''}`);
     }
     return lines.join('\n');
   }
